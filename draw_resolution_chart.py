@@ -17,8 +17,10 @@ class Tile:
 # Concrete implementation of a Tile
 # This one draws horizontal and vertical lines at a defined pixel width
 class LinesTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, **kwargs):
-        super().__init__(size, line_thickness=line_thickness, whitespace=whitespace, **kwargs)
+    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
+        super().__init__(size, line_thickness=line_thickness, 
+                         whitespace=whitespace, line_color=line_color, 
+                         background_color=background_color)
 
     def draw(self):
         img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
@@ -43,8 +45,10 @@ class LinesTile(Tile):
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 class ChessboardTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, **kwargs):
-        super().__init__(size, line_thickness=line_thickness, whitespace=whitespace, **kwargs)
+    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
+        super().__init__(size, line_thickness=line_thickness, 
+                         whitespace=whitespace, line_color=line_color, 
+                         background_color=background_color)
 
     def draw(self):
         block_size = self.line_thickness + self.whitespace
@@ -65,9 +69,11 @@ class ChessboardTile(Tile):
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 class CircleLinesTile(Tile):
-    def __init__(self, size, num_lines=16, line_color=0, background_color=255, **kwargs):
-        super().__init__(size, **kwargs)
-        self.num_lines = num_lines
+    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
+        super().__init__(size, line_thickness=line_thickness, 
+                         whitespace=whitespace, line_color=line_color, 
+                         background_color=background_color)
+        self.num_lines = 16
         self.line_color = line_color
         self.background_color = background_color
 
@@ -88,26 +94,25 @@ class CircleLinesTile(Tile):
 # chart
 class Rectangle:
     # A rectangle made of 2x2 tiles.
-    def __init__(self, tile_class, tile_size, label=None, label_position='center', line_thickness=1, draw_border=True, border_thickness=2, **tile_kwargs):
-        self.tile_class = tile_class
-        self.tile_size = tile_size
+    def __init__(self, tile_classes, tile_size, label=None, label_position='center', line_thickness=1, draw_border=True, border_thickness=2, **tile_kwargs):
         self.label = label
         self.label_position = label_position
         self.line_thickness = line_thickness
         self.draw_border = draw_border
         self.border_thickness = border_thickness
         self.tile_kwargs = tile_kwargs
-        self.tiles = [
-            [tile_class(tile_size, line_thickness, **tile_kwargs).draw() for _ in range(2)]
-            for _ in range(2)
-        ]
+        self.tile_classes = tile_classes
+        self.tile_size = tile_size
 
     def draw(self):
         # stack all tiles into the rectable
         opencv_color_red = (0,0,255)    # OpenCV uses (BGR)
         pil_color_red = (255,0,0)       # Pillow uses (RGB)
-        rows = [np.hstack(row) for row in self.tiles]
-        rectangle_img = np.vstack(rows)
+        row_images = []
+        for row in self.tile_classes:
+            row_tiles = [self.draw_tile(tile_class) for tile_class in row]
+            row_images.append(np.hstack(row_tiles))
+        rectangle_img = np.vstack(row_images)
 
         # draw label in center if provided
         if self.label:
@@ -128,6 +133,22 @@ class Rectangle:
         
         return rectangle_img
     
+    # This is the factory method for consturcting tiles.
+    def draw_tile(self, tile_class):
+        # Get shared kwargs
+        whitespace = self.tile_kwargs.get("whitespace", 1)
+        line_color = self.tile_kwargs.get("line_color", 0) # Default to black
+        background_color = self.tile_kwargs.get("background_color", 255) # Default to white
+        if tile_class is LinesTile:
+            return tile_class(self.tile_size, self.line_thickness, 
+                             whitespace, line_color, background_color).draw()
+        elif tile_class is ChessboardTile:
+            return tile_class(self.tile_size, self.line_thickness, 
+                             whitespace, line_color, background_color).draw()
+        else:
+            raise ValueError("Unknown tile class {}".format(tile_class))
+                             
+
     def draw_label(self, img, text, font_size, position='center', color=(0, 0, 0)):
         # Convert OpenCV image (BGR) to PIL image (RGB)
         img_pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
@@ -171,12 +192,12 @@ class Rectangle:
 # The overall image that will get constructed and displayed
 class ResolutionChart:
     # A chart made of 4x4 rectangles (each rectangle is 2x2 tiles).
-    def __init__(self, image_size, rectangle_class, tile_class, line_thickness, **tile_kwargs):
+    def __init__(self, image_size, rectangle_class, tile_classes, line_thickness, **tile_kwargs):
         self.image_size = image_size
         self.rectangle_class = rectangle_class
-        self.tile_class = tile_class
+        self.tile_classes = tile_classes
         self.line_thickness = line_thickness
-        self.tile_kwargs = tile_kwargs # TODO (AT) was having issues getting values from this
+        self.tile_kwargs = tile_kwargs
         self.rows, self.cols = 4, 4
         # Column headers C, D, E, F
         self.col_labels = [chr(ord('C') + i) for i in range(self.cols)]
@@ -191,11 +212,13 @@ class ResolutionChart:
         # TODO (AT) While one lines are fancy, breaking this into two for loops 
         # in a clearer way is easier to read.
         grid = [
-            [self.rectangle_class(self.tile_class, tile_size, 
-                                  label = "{0}{1}".format(self.col_labels[i], self.row_labels[j]),
-                                  label_position = 'center',
-                                  line_thickness = self.line_thickness,
-                                   **self.tile_kwargs).draw() 
+            [self.rectangle_class(
+                tile_classes = self.tile_classes,
+                tile_size = tile_size,
+                label = "{0}{1}".format(self.col_labels[i], self.row_labels[j]),
+                label_position = 'center',
+                line_thickness = self.line_thickness,
+                **self.tile_kwargs).draw() 
              for i in range(self.cols)]
             for j in range(self.rows)
         ]
@@ -203,10 +226,16 @@ class ResolutionChart:
         return np.vstack(rows)
 
 def main():
+    # The layout of each rectangle within the resolution chart
+    tiles = [
+        [LinesTile, ChessboardTile], 
+        [LinesTile, ChessboardTile]
+    ]
+
     chart = ResolutionChart(
         image_size=(3880, 880),
         rectangle_class=Rectangle,
-        tile_class=LinesTile,
+        tile_classes = tiles,
         line_thickness=24,
         whitespace=24,
         line_color=0,
