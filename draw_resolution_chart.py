@@ -55,15 +55,23 @@ class ChessboardTile(Tile):
         cols = self.width // block_size
         rows = self.height // block_size
 
+        # Calculate actual drawn area
+        board_width = cols * block_size
+        board_height = rows * block_size
+
+        # Calculate offsets to center the pattern
+        x_offset = (self.width - board_width) // 2
+        y_offset = (self.height - board_height) // 2
+
         img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
 
         for row in range(rows):
             for col in range(cols):
                 if (row + col) % 2 == 0:
-                    top = row * block_size
-                    left = col * block_size
-                    bottom = min((row + 1) * block_size, self.height)
-                    right = min((col + 1) * block_size, self.width)
+                    top = y_offset + row * block_size
+                    left = x_offset + col * block_size
+                    bottom = min(top + block_size, self.height)
+                    right = min(left + block_size, self.width)
                     img[top:bottom, left:right] = self.line_color
 
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
@@ -258,7 +266,7 @@ def main():
     # The layout of each rectangle within the resolution chart
     tiles = [
         [LinesTile, ChessboardTile], 
-        [LinesTile, CircleLinesTile]
+        [LinesTile, ChessboardTile]
     ]
 
     chart = ResolutionChart(
