@@ -1,13 +1,13 @@
+import argparse
 import cv2
 import numpy as np
 from PIL import ImageFont, ImageDraw, Image # Very important for legible fonts and text
 
 # Base abstract class
 class Tile:
-    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
+    def __init__(self, size, line_thickness, line_color, background_color):
         self.width, self.height = size
         self.line_thickness = line_thickness
-        self.whitespace = whitespace
         self.line_color = line_color
         self.background_color = background_color
 
@@ -17,16 +17,15 @@ class Tile:
 # Concrete implementation of a Tile
 # This one draws horizontal and vertical lines at a defined pixel width
 class LinesTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
-        super().__init__(size, line_thickness=line_thickness, 
-                         whitespace=whitespace, line_color=line_color, 
+    def __init__(self, size, line_thickness, line_color, background_color):
+        super().__init__(size, line_thickness=line_thickness, line_color=line_color, 
                          background_color=background_color)
 
     def draw(self):
         img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
 
         # Create pattern
-        pattern = np.array([False] * self.whitespace + [True] * self.line_thickness)
+        pattern = np.array([False] * self.line_thickness + [True] * self.line_thickness)
 
         # Horizontal lines (left half)
         h_repeats = (self.height + len(pattern) - 1) // len(pattern)
@@ -45,9 +44,8 @@ class LinesTile(Tile):
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 class ChessboardTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
-        super().__init__(size, line_thickness=line_thickness, 
-                         whitespace=whitespace, line_color=line_color, 
+    def __init__(self, size, line_thickness, line_color, background_color):
+        super().__init__(size, line_thickness=line_thickness, line_color=line_color, 
                          background_color=background_color)
 
     def draw(self):
@@ -76,53 +74,46 @@ class ChessboardTile(Tile):
 
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
+# THIS TILE DOESN'T USE LINE THICKENESS
+# It always goes from center at 1 px to 24 px
 class CircleLinesTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, line_color, background_color,
-                 num_lines = 16):
-        super().__init__(size, line_thickness=line_thickness, 
-                         whitespace=whitespace, line_color=line_color, 
+    def __init__(self, size, line_thickness, line_color, background_color,
+                 num_lines = 8):
+        super().__init__(size, line_thickness=line_thickness, line_color=line_color, 
                          background_color=background_color)
         self.num_lines = num_lines
         self.line_color = line_color
         self.background_color = background_color
 
-    # def draw(self):
-    #     img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
-    #     center = (self.width // 2, self.height // 2)
-    #     radius = min(self.width, self.height) // 2
-
-    #     for i in range(self.num_lines):
-    #         angle = 2 * np.pi * i / self.num_lines
-    #         end_x = int(center[0] + radius * np.cos(angle))
-    #         end_y = int(center[1] + radius * np.sin(angle))
-    #         cv2.line(img, center, (end_x, end_y), self.line_color, thickness=1)
-
-    #     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     def draw(self):
         img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
+
+        whitespace = 15  # Pixels
+        max_pixel = 24
+
+        # Define outer radius
+        radius = min(self.width, self.height) // 2 - whitespace
+        inner_radius = radius // 8  # Start drawing from halfway out
         center = (self.width // 2, self.height // 2)
-        radius = min(self.width, self.height) // 2
 
         for i in range(self.num_lines):
             angle = 2 * np.pi * i / self.num_lines
-            # Direction vector of the ray
             dir_x = np.cos(angle)
             dir_y = np.sin(angle)
 
-            # Draw points along the radius from center to edge
-            for r in range(radius):
-                # Interpolate thickness from 1 to self.line_thickness
-                thickness = int(1 + (self.line_thickness/2 - 1) * (r / radius))
-                if thickness < 1:
-                    thickness = 1
+            for r in range(inner_radius, radius + 1):  # Include outer edge
+                # Normalize r from 0 to 1 between inner and outer radius
+                t = (r - inner_radius) / (radius - inner_radius)
+                thickness = int(round(1 + (max_pixel - 1) * t))
+                thickness = max(thickness, 1)
 
-                x = int(center[0] + dir_x * r)
-                y = int(center[1] + dir_y * r)
-                # Draw a small circle at this point to simulate growing line
-                cv2.circle(img, (x, y), thickness // 2, self.line_color, -1)
+                x = int(round(center[0] + dir_x * r))
+                y = int(round(center[1] + dir_y * r))
+
+                if 0 <= x < self.width and 0 <= y < self.height:
+                    cv2.circle(img, (x, y), thickness // 2, self.line_color, -1)
 
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
-
 
 # Rectangles are then labeled and boardered sections of the resolution
 # chart
@@ -170,18 +161,17 @@ class Rectangle:
     # This is the factory method for consturcting tiles.
     def draw_tile(self, tile_class):
         # Get shared kwargs
-        whitespace = self.tile_kwargs.get("whitespace", 1)
         line_color = self.tile_kwargs.get("line_color", 0) # Default to black
         background_color = self.tile_kwargs.get("background_color", 255) # Default to white
         if tile_class is LinesTile:
             return tile_class(self.tile_size, self.line_thickness, 
-                             whitespace, line_color, background_color).draw()
+                             line_color, background_color).draw()
         elif tile_class is ChessboardTile:
             return tile_class(self.tile_size, self.line_thickness, 
-                             whitespace, line_color, background_color).draw()
+                             line_color, background_color).draw()
         elif tile_class is CircleLinesTile:
             return tile_class(self.tile_size, self.line_thickness, 
-                             whitespace, line_color, background_color).draw()
+                             line_color, background_color).draw()
         else:
             raise ValueError("Unknown tile class {}".format(tile_class))
                              
@@ -263,20 +253,28 @@ class ResolutionChart:
         return np.vstack(rows)
 
 def main():
+    parser = argparse.ArgumentParser(description="Generate a resolution chart for detecting blur.")
+    parser.add_argument('--width', type=int, default=3880, help='Width of image to display')
+    parser.add_argument('--height', type=int, default=880, help='Height of image to display')
+    parser.add_argument('--line_thickness', type=int, default=24, help='Line thickness in pixels')
+    parser.add_argument('--line_color', type=int, default=0, help='Line color in 0-255 scale')
+    parser.add_argument('--background_color', type=int, default=255, help='Background color in 0-255 scale')
+
+    args = parser.parse_args()
+
     # The layout of each rectangle within the resolution chart
     tiles = [
         [LinesTile, ChessboardTile], 
-        [LinesTile, ChessboardTile]
+        [LinesTile, CircleLinesTile]
     ]
 
     chart = ResolutionChart(
-        image_size=(3880, 880),
+        image_size=(args.width, args.height),
         rectangle_class=Rectangle,
         tile_classes = tiles,
-        line_thickness=24,
-        whitespace=24,
-        line_color=0,
-        background_color=255,
+        line_thickness=args.line_thickness,
+        line_color=args.line_color,
+        background_color=args.background_color,
         draw_border=True,
         border_thickness=2
     )
