@@ -51,7 +51,7 @@ class ChessboardTile(Tile):
                          background_color=background_color)
 
     def draw(self):
-        block_size = self.line_thickness + self.whitespace
+        block_size = self.line_thickness
         cols = self.width // block_size
         rows = self.height // block_size
 
@@ -69,14 +69,27 @@ class ChessboardTile(Tile):
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
 
 class CircleLinesTile(Tile):
-    def __init__(self, size, line_thickness, whitespace, line_color, background_color):
+    def __init__(self, size, line_thickness, whitespace, line_color, background_color,
+                 num_lines = 16):
         super().__init__(size, line_thickness=line_thickness, 
                          whitespace=whitespace, line_color=line_color, 
                          background_color=background_color)
-        self.num_lines = 16
+        self.num_lines = num_lines
         self.line_color = line_color
         self.background_color = background_color
 
+    # def draw(self):
+    #     img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
+    #     center = (self.width // 2, self.height // 2)
+    #     radius = min(self.width, self.height) // 2
+
+    #     for i in range(self.num_lines):
+    #         angle = 2 * np.pi * i / self.num_lines
+    #         end_x = int(center[0] + radius * np.cos(angle))
+    #         end_y = int(center[1] + radius * np.sin(angle))
+    #         cv2.line(img, center, (end_x, end_y), self.line_color, thickness=1)
+
+    #     return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     def draw(self):
         img = np.ones((self.height, self.width), dtype=np.uint8) * self.background_color
         center = (self.width // 2, self.height // 2)
@@ -84,11 +97,24 @@ class CircleLinesTile(Tile):
 
         for i in range(self.num_lines):
             angle = 2 * np.pi * i / self.num_lines
-            end_x = int(center[0] + radius * np.cos(angle))
-            end_y = int(center[1] + radius * np.sin(angle))
-            cv2.line(img, center, (end_x, end_y), self.line_color, thickness=1)
+            # Direction vector of the ray
+            dir_x = np.cos(angle)
+            dir_y = np.sin(angle)
+
+            # Draw points along the radius from center to edge
+            for r in range(radius):
+                # Interpolate thickness from 1 to self.line_thickness
+                thickness = int(1 + (self.line_thickness/2 - 1) * (r / radius))
+                if thickness < 1:
+                    thickness = 1
+
+                x = int(center[0] + dir_x * r)
+                y = int(center[1] + dir_y * r)
+                # Draw a small circle at this point to simulate growing line
+                cv2.circle(img, (x, y), thickness // 2, self.line_color, -1)
 
         return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+
 
 # Rectangles are then labeled and boardered sections of the resolution
 # chart
@@ -143,6 +169,9 @@ class Rectangle:
             return tile_class(self.tile_size, self.line_thickness, 
                              whitespace, line_color, background_color).draw()
         elif tile_class is ChessboardTile:
+            return tile_class(self.tile_size, self.line_thickness, 
+                             whitespace, line_color, background_color).draw()
+        elif tile_class is CircleLinesTile:
             return tile_class(self.tile_size, self.line_thickness, 
                              whitespace, line_color, background_color).draw()
         else:
@@ -216,7 +245,7 @@ class ResolutionChart:
                 tile_classes = self.tile_classes,
                 tile_size = tile_size,
                 label = "{0}{1}".format(self.col_labels[i], self.row_labels[j]),
-                label_position = 'center',
+                label_position = 'bottom_right',
                 line_thickness = self.line_thickness,
                 **self.tile_kwargs).draw() 
              for i in range(self.cols)]
@@ -229,7 +258,7 @@ def main():
     # The layout of each rectangle within the resolution chart
     tiles = [
         [LinesTile, ChessboardTile], 
-        [LinesTile, ChessboardTile]
+        [LinesTile, CircleLinesTile]
     ]
 
     chart = ResolutionChart(
